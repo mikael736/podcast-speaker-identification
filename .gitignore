@@ -1,0 +1,7 @@
+.env
+.venv/
+.claude/
+.vscode/
+episodes/
+processed_AI_TRANSCRIBE/
+speaker_mappings/
