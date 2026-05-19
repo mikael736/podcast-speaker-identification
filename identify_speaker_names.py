@@ -1,6 +1,12 @@
 # ===============================================================
 # IMPORTS
 # ===============================================================
+from episode_selector import (
+    all_episodes,
+    unprocessed_episodes,
+    episodes_by_number,
+    partial_assignment_episodes,
+)
 from pathlib import Path
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
@@ -292,11 +298,13 @@ def main():
     print("SPEAKER IDENTIFICATION PROCESSOR")
     print("=" * 60)
 
-    episode_files = [
-        f.stem  # e.g. "episode_4" from "episode_4.json"
-        for f in (BASE_DIR / "episodes").iterdir()
-        if f.suffix == ".json"
-    ]
+    # Swap the selector to control which episodes are processed:
+    #   all_episodes()                  – every episode
+    #   unprocessed_episodes()          – no llm_candidates yet (default)
+    #   episodes_by_number(133)         – episode 133 onwards
+    #   episodes_by_number(133, 150)    – episodes 133–150
+    #   partial_assignment_episodes()   – processed but not cleanly assigned
+    episode_files = unprocessed_episodes()
 
     for episode in episode_files:
         print(f"\n--- Episode {episode} ---")
