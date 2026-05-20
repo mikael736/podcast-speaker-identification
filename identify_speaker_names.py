@@ -359,11 +359,20 @@ def main():
 
     for episode in episode_files:
         print(f"\n--- Episode {episode} ---")
-        process_single_episode(
-            utterances_path=BASE_DIR / "processed_AI_TRANSCRIBE" / f"{episode}_utterances.jsonl",
-            episode_json_path=BASE_DIR / "episodes"              / f"{episode}.json",
-            mapping_path=BASE_DIR     / "speaker_mappings"       / f"{episode}_speaker_mapping_v2.json"
-        )
+        for attempt in range(3):
+            try:
+                process_single_episode(
+                    utterances_path=BASE_DIR / "processed_AI_TRANSCRIBE" / f"{episode}_utterances.jsonl",
+                    episode_json_path=BASE_DIR / "episodes"              / f"{episode}.json",
+                    mapping_path=BASE_DIR     / "speaker_mappings"       / f"{episode}_speaker_mapping_v2.json"
+                )
+                break
+            except RuntimeError as e:
+                if attempt == 2:
+                    print(f"Skipping {episode} after 3 failed attempts: {e}")
+                else:
+                    print(f"Attempt {attempt + 1} failed, retrying in 15s... ({e})")
+                    time.sleep(15)
         time.sleep(4)  # stay under 15 RPM (2 calls/episode × ~2s latency + 4s = ~8s/episode)
 
 if __name__ == "__main__":
