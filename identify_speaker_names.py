@@ -136,8 +136,6 @@ def _parse_name(raw: str) -> Optional[str]:
     name = re.sub(r'^[-*\s"\']+', '', raw.strip()).rstrip("'\"")
     if not name or name.upper() == "UNCLEAR" or name == "None":
         return None
-    if not re.match(r'^[A-Za-z\s\-\./]{2,50}$', name):
-        return None
     return name
 
 
@@ -355,7 +353,7 @@ def main():
     #   episodes_by_number(133)         – episode 133 onwards
     #   episodes_by_number(133, 150)    – episodes 133–150
     #   partial_assignment_episodes()   – processed but not cleanly assigned
-    episode_files = unprocessed_episodes()
+    episode_files = episodes_by_number(21,21)
 
     for episode in episode_files:
         print(f"\n--- Episode {episode} ---")
