@@ -240,7 +240,7 @@ Respond ONLY in this exact format:
 Rules:
 - Use only names from the Participants list, written exactly as given. Do not introduce new names.
 - Use UNCLEAR if you cannot confidently match a speaker to any participant.
-- If a speaker is clearly the podcast host but their name is not in the Participants list, use 'host'.
+- If a speaker is clearly acting as a podcast host or interviewer but their name is not in the Participants list, use 'host'. Multiple speakers may be labeled 'host'.
 - If a speaker is clearly a podcast intro/outro announcer, use 'Intro/Outro Voice'.
 
 No explanation, no extra text."""
@@ -353,7 +353,7 @@ def main():
     #   episodes_by_number(133)         – episode 133 onwards
     #   episodes_by_number(133, 150)    – episodes 133–150
     #   partial_assignment_episodes()   – processed but not cleanly assigned
-    episode_files = episodes_by_number(21,21)
+    episode_files = episodes_by_number(203,204)
 
     for episode in episode_files:
         print(f"\n--- Episode {episode} ---")
