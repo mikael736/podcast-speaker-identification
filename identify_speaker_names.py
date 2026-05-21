@@ -353,7 +353,7 @@ def main():
     #   episodes_by_number(133)         – episode 133 onwards
     #   episodes_by_number(133, 150)    – episodes 133–150
     #   partial_assignment_episodes()   – processed but not cleanly assigned
-    episode_files = episodes_by_number(203,204)
+    episode_files = all_episodes()
 
     for episode in episode_files:
         print(f"\n--- Episode {episode} ---")
