@@ -12,11 +12,13 @@ from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
-from groq import Groq
+from google import genai
+from google.genai import types
 from typing import Optional
 import json
 import os
 import re
+import time
 
 
 # ===============================================================
@@ -29,8 +31,8 @@ BASE_DIR = Path(__file__).resolve().parent
 # CONFIGURATION
 # ===============================================================
 load_dotenv()
-GROQ_API_KEY        = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL          = "llama-3.3-70b-versatile"
+GEMINI_API_KEY      = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL        = "gemini-3.1-flash-lite"
 DEFAULT_MAX_TOKENS  = 256
 DEFAULT_TEMPERATURE = 0.3
 
@@ -131,86 +133,136 @@ def shorten_utterance_list(
 
 def _parse_name(raw: str) -> Optional[str]:
     """Strip noise from a raw LLM name token and validate it. Returns None if invalid."""
-    name = re.sub(r'^[-*\s]+', '', raw.strip())
+    name = re.sub(r'^[-*\s"\']+', '', raw.strip()).rstrip("'\"")
     if not name or name.upper() == "UNCLEAR" or name == "None":
         return None
-    if not re.match(r'^[A-Za-z\s\-\./]{2,50}$', name):
-        return None
     return name
+
+
+def _extract_candidates(
+    episode_description: str,
+    model_name: str = GEMINI_MODEL,
+    api_key: str = GEMINI_API_KEY,
+) -> list[str]:
+    """Step 1: extract participant names from the episode description only."""
+    system_prompt = (
+        "You are an assistant that extracts the names of podcast participants from episode descriptions."
+    )
+    user_prompt = (
+        "List the full names of all people who participate as speakers in this podcast episode. "
+        "Only include actual participants — not people merely referenced, quoted, or discussed. "
+        "Return only the person's name — no job titles, roles, company names, or any other description.\n\n"
+        f"Episode Description:\n{episode_description}\n\n"
+        "Respond with only a Python list, e.g. ['Jason Foster', 'Sarah Johnson'] "
+        "or [] if no names are found. No other text."
+    )
+    try:
+        client = genai.Client(api_key=api_key)
+        result = client.models.generate_content(
+            model=model_name,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.1,
+                max_output_tokens=200,
+            ),
+        )
+        response = result.text.strip()
+        print(f"Candidates from description: {response}")
+    except Exception as e:
+        raise RuntimeError(f"Gemini API call failed (step 1): {e}")
+
+    match = re.search(r'\[([^\]]*)\]', response)
+    if not match:
+        return []
+    content = match.group(1).strip()
+    if not content:
+        return []
+    return [
+        name for raw in content.split(',')
+        if (name := _parse_name(raw)) is not None
+    ]
 
 
 def identify_speakers(
     utterances: list[Utterance],
     episode_description: str,
-    model_name: str = GROQ_MODEL,
+    model_name: str = GEMINI_MODEL,
     max_new_tokens: int = DEFAULT_MAX_TOKENS,
     temperature: float = DEFAULT_TEMPERATURE,
-    api_key: str = GROQ_API_KEY
+    api_key: str = GEMINI_API_KEY
 ) -> Optional[tuple[dict[str, str], list[str]]]:
     """
-    Query the LLM to map SPEAKER_XX labels to names.
-    Returns (speaker_mapping, candidates) where:
-      - speaker_mapping: {SPEAKER_XX: name or 'UNCLEAR'}
-      - candidates: all person names found (assigned or not), for transparency
-    Returns None if utterances are empty.
+    Two-step speaker identification:
+      1. Extract candidate names from the episode description.
+      2. Assign those candidates to SPEAKER_XX labels using transcript excerpts.
+    Returns (speaker_mapping, candidates) or None if utterances are empty.
     """
     if not utterances:
         return None
 
-    unique_speakers = sorted(set(utt.speaker for utt in utterances if utt.speaker))
+    # "UNKNOWN" is a diarization artifact label, not a real speaker — exclude it
+    unique_speakers = sorted(
+        set(utt.speaker for utt in utterances if utt.speaker and utt.speaker != "UNKNOWN")
+    )
     if not unique_speakers:
         return None
 
+    # Step 1 — extract candidate names from description
+    print("Step 1: extracting candidate names from description...")
+    candidates = _extract_candidates(episode_description, model_name=model_name, api_key=api_key)
+    if not candidates:
+        print("No candidates found in description — all speakers marked UNCLEAR.")
+        return ({s: "UNCLEAR" for s in unique_speakers}, [])
+
+    # Step 2 — assign candidates to speaker labels using transcript
     sample_utterances = shorten_utterance_list(utterances)
-    print(f"Using {len(sample_utterances)} utterances (out of {len(utterances)}) for speaker identification")
+    print(f"Step 2: assigning speakers. Using {len(sample_utterances)} of {len(utterances)} utterances.")
 
     sample_text    = format_utterances_to_text(sample_utterances)
-    speaker_lines  = "\n".join(f"{s}: [name or UNCLEAR]" for s in unique_speakers)
-    format_example = f"{speaker_lines}\nCANDIDATES: [Name1, Name2, ...]"
+    speaker_lines  = "\n".join(f"{s}: [name from list or UNCLEAR]" for s in unique_speakers)
+    candidates_str = ", ".join(candidates)
 
     system_prompt = (
-        "You are a helpful assistant that identifies speaker names from podcast transcripts. "
-        "Be critical and only identify speakers if their names are clearly mentioned in the episode "
-        "description or transcript. If you cannot confidently identify a speaker, use 'UNCLEAR'."
+        "You are an assistant that matches diarization speaker labels to named participants "
+        "in a podcast transcript."
     )
+    user_prompt = f"""Assign each speaker label to the correct person from the participants list.
 
-    user_prompt = f"""Given the following episode description and sample transcript excerpts, identify the real names of the speakers.
+Participants: [{candidates_str}]
 
-Episode Description:
-{episode_description}
-
-Sample Transcript Excerpts:
+Transcript Excerpts:
 {sample_text}
 
 Respond ONLY in this exact format:
-{format_example}
+{speaker_lines}
 
 Rules:
-- Assign each speaker using the name as written in the episode description where possible.
-- One speaker may be a podcast intro/outro announcer (formal welcome, sponsor reads, sign-off). Label them 'Intro/Outro Voice', especially if all other speakers are already identified.
-- If a speaker cannot be confidently identified, use 'UNCLEAR'.
-- CANDIDATES must always be a Python list with square brackets containing only proper person names, e.g. CANDIDATES: [Pete Williams, Jason Foster] or CANDIDATES: [] if no names were found. List every person name found in the description or transcript, whether assigned or not, including spelling variants. Do not include explanations, notes, or any text that is not a person's name.
+- Use only names from the Participants list, written exactly as given. Do not introduce new names.
+- Use UNCLEAR if you cannot confidently match a speaker to any participant.
+- If a speaker is clearly acting as a podcast host or interviewer but their name is not in the Participants list, use 'host'. Multiple speakers may be labeled 'host'.
+- If a speaker is clearly a podcast intro/outro announcer, use 'Intro/Outro Voice'.
 
-No explanation, no bullet points, no extra text."""
+No explanation, no extra text."""
 
-    print(f"Querying Groq ({model_name})...")
+    print(f"Querying Gemini ({model_name}) for speaker assignment...")
     try:
-        client = Groq(api_key=api_key)
-        completion = client.chat.completions.create(
+        client = genai.Client(api_key=api_key)
+        result = client.models.generate_content(
             model=model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_prompt}
-            ],
-            temperature=temperature,
-            max_tokens=max_new_tokens,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=temperature,
+                max_output_tokens=max_new_tokens,
+            ),
         )
-        response = completion.choices[0].message.content.strip()
-        print(f"Model response: {response}")
+        response = result.text.strip()
+        print(f"Assignment response: {response}")
     except Exception as e:
-        raise RuntimeError(f"Groq API call failed: {e}")
+        raise RuntimeError(f"Gemini API call failed (step 2): {e}")
 
-    # Parse SPEAKER_XX → name mappings
+    # Parse SPEAKER_XX → name
     speaker_mapping = {}
     for speaker in unique_speakers:
         match = re.search(rf"{re.escape(speaker)}\s*:\s*([^\n]+)", response, re.IGNORECASE)
@@ -222,17 +274,6 @@ No explanation, no bullet points, no extra text."""
         else:
             speaker_mapping[speaker] = "UNCLEAR"
             print(f"Could not find mapping for {speaker} in response")
-
-    # Parse CANDIDATES: [...] — all person names found
-    candidates = []
-    candidates_match = re.search(r'CANDIDATES:\s*\[?([^\]\n]*)\]?', response, re.IGNORECASE)
-    if candidates_match:
-        content = candidates_match.group(1).strip()
-        if content:
-            candidates = [
-                name for raw in content.split(',')
-                if (name := _parse_name(raw)) is not None
-            ]
 
     return (speaker_mapping, candidates) if speaker_mapping else None
 
@@ -265,6 +306,14 @@ def process_single_episode(utterances_path, episode_json_path, mapping_path):
         return
 
     speaker_mapping, candidates = result
+
+    # Auto-assign: if exactly 1 unclear speaker and 1 unaccounted candidate, assign them
+    _resolved = {v for v in speaker_mapping.values() if v not in ("UNCLEAR", "Intro/Outro Voice")}
+    _unclear  = [k for k, v in speaker_mapping.items() if v == "UNCLEAR"]
+    _leftover = [c for c in candidates if not any(names_are_similar(c, r) for r in _resolved)]
+    if len(_unclear) == 1 and len(_leftover) == 1:
+        speaker_mapping[_unclear[0]] = _leftover[0]
+        print(f"Auto-assigned: {_unclear[0]} → {_leftover[0]}")
 
     resolved   = {k: v for k, v in speaker_mapping.items() if v != "UNCLEAR"}
     unresolved = [k for k, v in speaker_mapping.items() if v == "UNCLEAR"]
@@ -304,15 +353,25 @@ def main():
     #   episodes_by_number(133)         – episode 133 onwards
     #   episodes_by_number(133, 150)    – episodes 133–150
     #   partial_assignment_episodes()   – processed but not cleanly assigned
-    episode_files = unprocessed_episodes()
+    episode_files = all_episodes()
 
     for episode in episode_files:
         print(f"\n--- Episode {episode} ---")
-        process_single_episode(
-            utterances_path=BASE_DIR / "processed_AI_TRANSCRIBE" / f"{episode}_utterances.jsonl",
-            episode_json_path=BASE_DIR / "episodes"              / f"{episode}.json",
-            mapping_path=BASE_DIR     / "speaker_mappings"       / f"{episode}_speaker_mapping_v2.json"
-        )
+        for attempt in range(3):
+            try:
+                process_single_episode(
+                    utterances_path=BASE_DIR / "processed_AI_TRANSCRIBE" / f"{episode}_utterances.jsonl",
+                    episode_json_path=BASE_DIR / "episodes"              / f"{episode}.json",
+                    mapping_path=BASE_DIR     / "speaker_mappings"       / f"{episode}_speaker_mapping_v2.json"
+                )
+                break
+            except RuntimeError as e:
+                if attempt == 2:
+                    print(f"Skipping {episode} after 3 failed attempts: {e}")
+                else:
+                    print(f"Attempt {attempt + 1} failed, retrying in 15s... ({e})")
+                    time.sleep(15)
+        time.sleep(4)  # stay under 15 RPM (2 calls/episode × ~2s latency + 4s = ~8s/episode)
 
 if __name__ == "__main__":
     main()

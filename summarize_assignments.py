@@ -8,19 +8,14 @@ Run after identify_speaker_names.py has been executed for all episodes.
 from pathlib import Path
 import json
 
-from identify_speaker_names import names_are_similar
-
 BASE_DIR      = Path(__file__).resolve().parent
 MAPPINGS_DIR  = BASE_DIR / "speaker_mappings"
 
 
 def is_clean_assignment(mapping: dict, candidates: list) -> bool:
     resolved_values = {v for v in mapping.values() if v != "UNCLEAR"}
-    has_unresolved  = any(v == "UNCLEAR" or "_unresolved" in v for v in mapping.values())
-    unaccounted     = [
-        c for c in candidates
-        if not any(names_are_similar(c, r) for r in resolved_values)
-    ]
+    has_unresolved  = any(v == "UNCLEAR" for v in mapping.values())
+    unaccounted     = [c for c in candidates if c not in resolved_values]
     return not has_unresolved and not unaccounted
 
 
