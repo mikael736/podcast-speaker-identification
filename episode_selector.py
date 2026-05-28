@@ -78,29 +78,23 @@ def unprocessed_episodes() -> list:
 
 
 def episodes_by_number(start: int | list[int], end: Optional[int] = None) -> list:
-    """Episodes matching a number range or an explicit list of numbers.
+    """Intersection of the requested episodes and those that exist in EPISODES_DIR.
 
     Examples:
         episodes_by_number(133)          # episode 133 onwards
         episodes_by_number(133, 150)     # episodes 133–150
         episodes_by_number([3, 7, 42])   # exactly those episodes
     """
+    existing = {_episode_number(ep): ep for ep in all_episodes()}
+
     if isinstance(start, list):
         target = set(start)
-        return _sorted([ep for ep in all_episodes() if _episode_number(ep) in target])
+    elif end is None:
+        target = {n for n in existing if n >= start}
+    else:
+        target = set(range(start, end + 1))
 
-    result = []
-    for ep in all_episodes():
-        n = _episode_number(ep)
-        if n is None:
-            continue
-        if end is None:
-            if n >= start:
-                result.append(ep)
-        else:
-            if start <= n <= end:
-                result.append(ep)
-    return result
+    return _sorted([existing[n] for n in target if n in existing])
 
 
 def partial_assignment_episodes() -> list:
