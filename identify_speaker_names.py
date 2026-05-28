@@ -6,6 +6,9 @@ from episode_selector import (
     unprocessed_episodes,
     episodes_by_number,
     partial_assignment_episodes,
+    episode_path,
+    transcript_path,
+    mapping_path,
 )
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -19,12 +22,6 @@ import json
 import os
 import re
 import time
-
-
-# ===============================================================
-# PATHS
-# ===============================================================
-BASE_DIR = Path(__file__).resolve().parent
 
 
 # ===============================================================
@@ -141,17 +138,20 @@ def _parse_name(raw: str) -> Optional[str]:
 
 def _extract_candidates(
     episode_description: str,
+    episode_title: str = "",
     model_name: str = GEMINI_MODEL,
     api_key: str = GEMINI_API_KEY,
 ) -> list[str]:
-    """Step 1: extract participant names from the episode description only."""
+    """Step 1: extract participant names from the episode title and description."""
     system_prompt = (
-        "You are an assistant that extracts the names of podcast participants from episode descriptions."
+        "You are an assistant that extracts the names of podcast participants from episode metadata."
     )
+    title_block = f"Episode Title:\n{episode_title}\n\n" if episode_title else ""
     user_prompt = (
         "List the full names of all people who participate as speakers in this podcast episode. "
         "Only include actual participants — not people merely referenced, quoted, or discussed. "
         "Return only the person's name — no job titles, roles, company names, or any other description.\n\n"
+        f"{title_block}"
         f"Episode Description:\n{episode_description}\n\n"
         "Respond with only a Python list, e.g. ['Jason Foster', 'Sarah Johnson'] "
         "or [] if no names are found. No other text."
@@ -187,6 +187,7 @@ def _extract_candidates(
 def identify_speakers(
     utterances: list[Utterance],
     episode_description: str,
+    episode_title: str = "",
     model_name: str = GEMINI_MODEL,
     max_new_tokens: int = DEFAULT_MAX_TOKENS,
     temperature: float = DEFAULT_TEMPERATURE,
@@ -194,7 +195,7 @@ def identify_speakers(
 ) -> Optional[tuple[dict[str, str], list[str]]]:
     """
     Two-step speaker identification:
-      1. Extract candidate names from the episode description.
+      1. Extract candidate names from the episode title and description.
       2. Assign those candidates to SPEAKER_XX labels using transcript excerpts.
     Returns (speaker_mapping, candidates) or None if utterances are empty.
     """
@@ -208,9 +209,9 @@ def identify_speakers(
     if not unique_speakers:
         return None
 
-    # Step 1 — extract candidate names from description
-    print("Step 1: extracting candidate names from description...")
-    candidates = _extract_candidates(episode_description, model_name=model_name, api_key=api_key)
+    # Step 1 — extract candidate names from title + description
+    print("Step 1: extracting candidate names from title and description...")
+    candidates = _extract_candidates(episode_description, episode_title=episode_title, model_name=model_name, api_key=api_key)
     if not candidates:
         print("No candidates found in description — all speakers marked UNCLEAR.")
         return ({s: "UNCLEAR" for s in unique_speakers}, [])
@@ -286,21 +287,33 @@ def process_single_episode(utterances_path, episode_json_path, mapping_path):
     print(f"Loading utterances from {utterances_path}")
     utterances = load_utterances_jsonl(utterances_path)
 
-    print(f"Loading episode description from {episode_json_path}")
+    print(f"Loading episode metadata from {episode_json_path}")
     with open(Path(episode_json_path), "r", encoding="utf-8") as f:
         episode_data = json.load(f)
+    episode_title = episode_data.get("title", "").strip()
     episode_description = BeautifulSoup(
         episode_data.get("description", episode_data.get("content", "")),
         "html.parser"
     ).get_text().strip()
+    print(f"Episode title: {episode_title}")
     print(f"Episode description loaded ({len(episode_description)} characters)")
 
-    print(f"Loading existing mapping from {mapping_path}")
-    with open(Path(mapping_path), "r", encoding="utf-8") as f:
-        mapping_data = json.load(f)
+    if Path(mapping_path).exists():
+        print(f"Loading existing mapping from {mapping_path}")
+        with open(Path(mapping_path), "r", encoding="utf-8") as f:
+            mapping_data = json.load(f)
+    else:
+        print(f"No mapping file found — creating scaffold from transcript speakers")
+        unique_speakers = sorted(
+            set(utt.speaker for utt in utterances if utt.speaker and utt.speaker != "UNKNOWN")
+        )
+        mapping_data = {"mapping": {s: "x" for s in unique_speakers}}
+        with open(Path(mapping_path), "w", encoding="utf-8") as f:
+            json.dump(mapping_data, f, indent=2, ensure_ascii=False)
+        print(f"Scaffold saved to {mapping_path}")
 
     print("\nIdentifying speakers...")
-    result = identify_speakers(utterances, episode_description)
+    result = identify_speakers(utterances, episode_description, episode_title=episode_title)
     if result is None:
         print("Speaker identification failed. Mapping file will not be updated.")
         return
@@ -352,17 +365,18 @@ def main():
     #   unprocessed_episodes()          – no llm_candidates yet (default)
     #   episodes_by_number(133)         – episode 133 onwards
     #   episodes_by_number(133, 150)    – episodes 133–150
+    #   episodes_by_number([3, 7, 42])  – exactly those episodes
     #   partial_assignment_episodes()   – processed but not cleanly assigned
-    episode_files = all_episodes()
+    episode_files = episodes_by_number([25468, 25481, 25502])
 
     for episode in episode_files:
         print(f"\n--- Episode {episode} ---")
         for attempt in range(3):
             try:
                 process_single_episode(
-                    utterances_path=BASE_DIR / "processed_AI_TRANSCRIBE" / f"{episode}_utterances.jsonl",
-                    episode_json_path=BASE_DIR / "episodes"              / f"{episode}.json",
-                    mapping_path=BASE_DIR     / "speaker_mappings"       / f"{episode}_speaker_mapping_v2.json"
+                    utterances_path=transcript_path(episode),
+                    episode_json_path=episode_path(episode),
+                    mapping_path=mapping_path(episode),
                 )
                 break
             except RuntimeError as e:

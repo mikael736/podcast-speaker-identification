@@ -3,6 +3,4 @@
 .claude/
 .vscode/
 __pycache__/
-episodes/
-processed_AI_TRANSCRIBE/
-speaker_mappings/
+podcast_series/

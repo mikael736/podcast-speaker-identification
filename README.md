@@ -8,8 +8,8 @@ via the Gemini API.
 
 1. **Load** – reads per-episode utterances (`.jsonl`) and episode
    metadata (`.json`).
-2. **Extract candidates** – sends the episode description to Gemini and
-   asks it to list the names of all participants (step 1).
+2. **Extract candidates** – sends the episode title and description to
+   Gemini and asks it to list the names of all participants (step 1).
 3. **Sample** – selects a representative subset of utterances (≤ 180 s
    of audio, with intro-context for under-represented speakers) to keep
    the prompt short.
@@ -27,13 +27,15 @@ via the Gemini API.
 
 ```
 identify_speaker_names/
-├── identify_speaker_names.py   # main processing script
-├── episode_selector.py         # helpers for selecting which episodes to process
-├── summarize_assignments.py    # prints a clean/non-clean summary across all episodes
-├── spot_check.py               # samples clean assignments for manual review
-├── episodes/                   # episode metadata JSON files (gitignored)
-├── processed_AI_TRANSCRIBE/    # utterance JSONL files from diarization (gitignored)
-└── speaker_mappings/           # output: one JSON mapping file per episode (gitignored)
+├── identify_speaker_names.py    # main processing script
+├── episode_selector.py          # path config + helpers for selecting which episodes to process
+├── summarize_assignments.py     # prints a clean/non-clean summary across all episodes
+├── spot_check.py                # samples clean assignments for manual review
+└── podcast_series/              # one folder per podcast series (gitignored)
+    └── <podcast_name>/
+        ├── episodes/            # episode metadata JSON files
+        ├── processed_AI_TRANSCRIBE/  # utterance JSONL files from diarization
+        └── speaker_mappings/    # output: one JSON mapping file per episode
 ```
 
 ## Setup

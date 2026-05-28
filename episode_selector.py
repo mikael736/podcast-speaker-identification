@@ -4,15 +4,25 @@ in identify_speaker_names.main():
 
     from episode_selector import unprocessed_episodes
     episode_files = unprocessed_episodes()
+
+Path configuration — change PODCAST_DIR (and the file-path builders below if the
+naming convention differs) when switching to a different podcast series.
 """
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Optional
 import json
 
-BASE_DIR     = Path(__file__).resolve().parent
-EPISODES_DIR = BASE_DIR / "episodes"
-MAPPINGS_DIR = BASE_DIR / "speaker_mappings"
+BASE_DIR        = Path(__file__).resolve().parent
+PODCAST_DIR     = BASE_DIR / "podcast_series" / "technovation"
+EPISODES_DIR    = PODCAST_DIR / "episodes"
+TRANSCRIPTS_DIR = PODCAST_DIR / "processed_AI_TRANSCRIBE"
+MAPPINGS_DIR    = PODCAST_DIR / "speaker_mappings"
+
+# File-path builders — adjust the f-string patterns if the podcast uses different filenames
+def episode_path(stem: str)    -> Path: return EPISODES_DIR    / f"{stem}.json"
+def transcript_path(stem: str) -> Path: return TRANSCRIPTS_DIR / f"{stem}_utterances.jsonl"
+def mapping_path(stem: str)    -> Path: return MAPPINGS_DIR    / f"{stem}_speaker_mapping_v2.json"
 
 
 # ── Private helpers ─────────────────────────────────────────────
@@ -29,7 +39,7 @@ def _sorted(stems: list) -> list:
 
 
 def _load_mapping(stem: str) -> Optional[dict]:
-    path = MAPPINGS_DIR / f"{stem}_speaker_mapping_v2.json"
+    path = mapping_path(stem)
     if not path.exists():
         return None
     with open(path, "r", encoding="utf-8") as f:
@@ -53,7 +63,7 @@ def _is_clean(mapping: dict, candidates: list) -> bool:
 # ── Public selectors ─────────────────────────────────────────────
 
 def all_episodes() -> list:
-    """Every episode found in episodes/."""
+    """Every episode found in EPISODES_DIR."""
     return _sorted([f.stem for f in EPISODES_DIR.glob("episode_*.json")])
 
 
@@ -67,13 +77,18 @@ def unprocessed_episodes() -> list:
     return result
 
 
-def episodes_by_number(start: int, end: Optional[int] = None) -> list:
-    """Episodes with number >= start (and <= end if given).
+def episodes_by_number(start: int | list[int], end: Optional[int] = None) -> list:
+    """Episodes matching a number range or an explicit list of numbers.
 
     Examples:
-        episodes_by_number(133)        # episode 133 onwards
-        episodes_by_number(133, 150)   # episodes 133–150
+        episodes_by_number(133)          # episode 133 onwards
+        episodes_by_number(133, 150)     # episodes 133–150
+        episodes_by_number([3, 7, 42])   # exactly those episodes
     """
+    if isinstance(start, list):
+        target = set(start)
+        return _sorted([ep for ep in all_episodes() if _episode_number(ep) in target])
+
     result = []
     for ep in all_episodes():
         n = _episode_number(ep)
