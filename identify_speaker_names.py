@@ -243,6 +243,7 @@ Rules:
 - Use UNCLEAR if you cannot confidently match a speaker to any participant.
 - If a speaker is clearly acting as a podcast host or interviewer but their name is not in the Participants list, use 'host'. Multiple speakers may be labeled 'host'.
 - If a speaker is clearly a podcast intro/outro announcer, use 'Intro/Outro Voice'.
+- If a speaker appears only in a sponsored/advertisement segment (the host introduces them as a partner or sponsor), use 'Sponsor Voice'.
 
 No explanation, no extra text."""
 
@@ -321,7 +322,7 @@ def process_single_episode(utterances_path, episode_json_path, mapping_path):
     speaker_mapping, candidates = result
 
     # Auto-assign: if exactly 1 unclear speaker and 1 unaccounted candidate, assign them
-    _resolved = {v for v in speaker_mapping.values() if v not in ("UNCLEAR", "Intro/Outro Voice")}
+    _resolved = {v for v in speaker_mapping.values() if v not in ("UNCLEAR", "Intro/Outro Voice", "Sponsor Voice")}
     _unclear  = [k for k, v in speaker_mapping.items() if v == "UNCLEAR"]
     _leftover = [c for c in candidates if not any(names_are_similar(c, r) for r in _resolved)]
     if len(_unclear) == 1 and len(_leftover) == 1:
@@ -367,7 +368,7 @@ def main():
     #   episodes_by_number(133, 150)    – episodes 133–150
     #   episodes_by_number([3, 7, 42])  – exactly those episodes
     #   partial_assignment_episodes()   – processed but not cleanly assigned
-    episode_files = episodes_by_number([25468, 25481, 25502])
+    episode_files = partial_assignment_episodes()
 
     for episode in episode_files:
         print(f"\n--- Episode {episode} ---")
