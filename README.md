@@ -95,3 +95,12 @@ Each `speaker_mappings/episode_N_speaker_mapping_v2.json` gains two fields:
 |---|---|
 | `mapping` | `{SPEAKER_XX: name}` — only present when all speakers are cleanly resolved |
 | `llm_candidates` | All participant names extracted from the episode description |
+
+Reserved values used in place of a name:
+
+| Value | Meaning |
+|---|---|
+| `Intro/Outro Voice` | Podcast intro or outro announcer |
+| `Sponsor Voice` | Speaker appearing only in a sponsored/advertisement segment |
+| `host` | Host or interviewer whose name is not in the episode description |
+| `UNCLEAR` | Speaker could not be confidently matched to any candidate |

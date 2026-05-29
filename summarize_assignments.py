@@ -5,11 +5,8 @@ current mapping, and the LLM candidates that were found.
 
 Run after identify_speaker_names.py has been executed for all episodes.
 """
-from pathlib import Path
+from episode_selector import MAPPINGS_DIR
 import json
-
-BASE_DIR      = Path(__file__).resolve().parent
-MAPPINGS_DIR  = BASE_DIR / "speaker_mappings"
 
 
 def is_clean_assignment(mapping: dict, candidates: list) -> bool:

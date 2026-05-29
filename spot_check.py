@@ -6,14 +6,9 @@ to confirm or refute the assignment without opening any files manually.
 
 Run after identify_speaker_names.py has been executed for all episodes.
 """
-from pathlib import Path
+from episode_selector import MAPPINGS_DIR, episode_path, transcript_path
 from bs4 import BeautifulSoup
 import json
-
-BASE_DIR       = Path(__file__).resolve().parent
-MAPPINGS_DIR   = BASE_DIR / "speaker_mappings"
-EPISODES_DIR   = BASE_DIR / "episodes"
-UTTERANCES_DIR = BASE_DIR / "processed_AI_TRANSCRIBE"
 
 SAMPLE_EVERY     = 12   # take every Nth clean episode
 UTTERANCES_SHOWN = 30   # opening utterances shown per episode
@@ -27,7 +22,7 @@ def _is_clean(mapping: dict, candidates: list) -> bool:
 
 
 def _load_description(episode: str) -> str:
-    path = EPISODES_DIR / f"{episode}.json"
+    path = episode_path(episode)
     if not path.exists():
         return "(description not found)"
     with open(path, "r", encoding="utf-8") as f:
@@ -39,7 +34,7 @@ def _load_description(episode: str) -> str:
 
 
 def _load_utterances(episode: str, limit: int) -> list[dict]:
-    path = UTTERANCES_DIR / f"{episode}_utterances.jsonl"
+    path = transcript_path(episode)
     if not path.exists():
         return []
     utterances = []
@@ -65,7 +60,8 @@ def main():
         mapping    = data.get("mapping", {})
         candidates = data["llm_candidates"]
         if _is_clean(mapping, candidates):
-            clean_episodes.append((path, data))
+            episode = path.stem.removesuffix("_speaker_mapping_v2")
+            clean_episodes.append((episode, data))
 
     # Every Nth, always including first and last for range coverage
     indices = sorted({0, len(clean_episodes) - 1} | set(range(0, len(clean_episodes), SAMPLE_EVERY)))
@@ -75,8 +71,7 @@ def main():
     print(f"SPOT-CHECK REVIEW  —  {len(sample)} of {len(clean_episodes)} clean episodes sampled")
     print("=" * 70)
 
-    for path, data in sample:
-        episode    = data.get("episode_name", path.stem)
+    for episode, data in sample:
         mapping    = data["mapping"]
         candidates = data["llm_candidates"]
 
