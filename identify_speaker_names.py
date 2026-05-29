@@ -12,7 +12,6 @@ from episode_selector import (
 )
 from pathlib import Path
 from bs4 import BeautifulSoup
-from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 from google import genai
@@ -46,11 +45,6 @@ class Utterance:
     end: float
     text: str
     words: list = field(default_factory=list)
-
-
-def names_are_similar(a: str, b: str, threshold: float = 0.85) -> bool:
-    """Return True if two name strings are close enough to be the same person."""
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= threshold
 
 
 def load_utterances_jsonl(path) -> list[Utterance]:
@@ -324,7 +318,7 @@ def process_single_episode(utterances_path, episode_json_path, mapping_path):
     # Auto-assign: if exactly 1 unclear speaker and 1 unaccounted candidate, assign them
     _resolved = {v for v in speaker_mapping.values() if v not in ("UNCLEAR", "Intro/Outro Voice", "Sponsor Voice")}
     _unclear  = [k for k, v in speaker_mapping.items() if v == "UNCLEAR"]
-    _leftover = [c for c in candidates if not any(names_are_similar(c, r) for r in _resolved)]
+    _leftover = [c for c in candidates if c not in _resolved]
     if len(_unclear) == 1 and len(_leftover) == 1:
         speaker_mapping[_unclear[0]] = _leftover[0]
         print(f"Auto-assigned: {_unclear[0]} → {_leftover[0]}")
@@ -335,7 +329,7 @@ def process_single_episode(utterances_path, episode_json_path, mapping_path):
     # is_clean: no unresolved speakers AND every candidate accounts for a known speaker
     unaccounted = [
         c for c in candidates
-        if not any(names_are_similar(c, r) for r in resolved.values())
+        if c not in resolved.values()
     ]
     is_clean = len(unresolved) == 0 and len(unaccounted) == 0
 
